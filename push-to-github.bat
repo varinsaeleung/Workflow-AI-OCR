@@ -24,7 +24,7 @@ if not exist ".git" (
 )
 
 echo.
-set REPO=https://github.com/varinsaeleung/KM-AI-Workflow-OCR.git
+set REPO=https://github.com/varinsaeleung/Workflow-AI-OCR.git
 
 
 echo.
