@@ -1,0 +1,103 @@
+name: KM AI Workflow OCR CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore backend dependencies
+        run: dotnet restore KM.AIWorkflowOCR.sln
+
+      - name: Build backend
+        run: dotnet build KM.AIWorkflowOCR.sln --configuration Release --no-restore
+
+      - name: Run backend unit tests
+        run: dotnet test KM.AIWorkflowOCR.sln --configuration Release --no-build --logger trx --results-directory TestResults
+
+      - name: Publish API
+        run: dotnet publish src/KmOcr.Api/KmOcr.Api.csproj --configuration Release --no-build --output artifacts/api
+
+      - name: Publish Worker
+        run: dotnet publish src/KmOcr.Worker/KmOcr.Worker.csproj --configuration Release --no-build --output artifacts/worker
+
+      - name: Upload backend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-artifacts
+          path: artifacts
+
+  frontend:
+    name: Frontend build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend unit tests
+        run: npm test -- --run --maxWorkers=1
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+
+  docker:
+    name: Docker image validation
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f src/KmOcr.Api/Dockerfile -t km-ocr-api:ci .
+
+      - name: Build Worker image
+        run: docker build -f src/KmOcr.Worker/Dockerfile -t km-ocr-worker:ci .
+
+      - name: Build Web image
+        run: docker build -f apps/web/Dockerfile -t km-ocr-web:ci .
+
+      - name: Validate Docker Compose configuration
+        run: docker compose -f docker-compose.yml config >/tmp/km-ocr-compose.yml

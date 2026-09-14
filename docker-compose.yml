@@ -1,0 +1,246 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: km-ocr-postgres
+    environment:
+      POSTGRES_DB: km_ocr
+      POSTGRES_USER: km_ocr
+      POSTGRES_PASSWORD: km_ocr_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/postgresql/001_enterprise_schema.sql:/docker-entrypoint-initdb.d/001_enterprise_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U km_ocr -d km_ocr"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    container_name: km-ocr-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: km_ocr
+      RABBITMQ_DEFAULT_PASS: km_ocr_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: km-ocr-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-km_ocr}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-km_ocr_password}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: km-ocr-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-km_ocr}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-km_ocr_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-documents}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb --ignore-existing local/$$MINIO_BUCKET;
+      "
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: km-ocr-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: km-ocr-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+    entrypoint: >
+      /bin/sh -c "
+      ollama pull $$OLLAMA_MODEL;
+      "
+
+  opensearch:
+    image: opensearchproject/opensearch:latest
+    container_name: km-ocr-opensearch
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-ChangeMe!2026OpenSearch}
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 30
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: km-ocr-opensearch-dashboards
+    environment:
+      OPENSEARCH_HOSTS: '["http://opensearch:9200"]'
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: "true"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    ports:
+      - "5601:5601"
+
+  api:
+    build:
+      context: .
+      dockerfile: src/KmOcr.Api/Dockerfile
+    container_name: km-ocr-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=km_ocr;Username=km_ocr;Password=km_ocr_password
+      Storage__RootPath: /app/uploads
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: km_ocr
+      RabbitMq__Password: km_ocr_password
+      RabbitMq__OcrQueueName: ocr.jobs
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: ${MINIO_ROOT_USER:-km_ocr}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-km_ocr_password}
+      Minio__BucketName: ${MINIO_BUCKET:-documents}
+      Minio__UseSsl: false
+      Minio__PreviewUrlMinutes: 10
+      Cors__AllowedOrigins__0: http://localhost:3000
+      Jwt__Issuer: ${JWT_ISSUER:-km-ai-workflow-ocr}
+      Jwt__Audience: ${JWT_AUDIENCE:-km-ai-workflow-ocr-web}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-change-this-development-key-at-least-32-bytes-long}
+      Jwt__AccessTokenMinutes: ${JWT_ACCESS_TOKEN_MINUTES:-15}
+      Jwt__RefreshTokenDays: ${JWT_REFRESH_TOKEN_DAYS:-7}
+      SeedAdmin__Email: ${SEED_ADMIN_EMAIL:-admin@km.local}
+      SeedAdmin__DisplayName: ${SEED_ADMIN_DISPLAY_NAME:-System Administrator}
+      SeedAdmin__Password: ${SEED_ADMIN_PASSWORD:-ChangeMe!2026}
+      PaddleOcr__PythonExecutable: python3
+      PaddleOcr__ScriptPath: Ocr/paddle_ocr_service.py
+      PaddleOcr__Languages: ${PADDLE_OCR_LANGUAGES:-tha+eng}
+      PaddleOcr__TimeoutSeconds: ${PADDLE_OCR_TIMEOUT_SECONDS:-120}
+      Ai__Provider: ${AI_PROVIDER:-Ollama}
+      Ollama__BaseUrl: http://ollama:11434
+      Ollama__Model: ${OLLAMA_MODEL:-llama3.1}
+      Ollama__TimeoutSeconds: ${OLLAMA_TIMEOUT_SECONDS:-120}
+      OpenSearch__Url: http://opensearch:9200
+      OpenSearch__IndexName: ${OPENSEARCH_INDEX_NAME:-km-documents}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      ollama-init:
+        condition: service_completed_successfully
+      opensearch:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/app/uploads
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/KmOcr.Worker/Dockerfile
+    container_name: km-ocr-worker
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=km_ocr;Username=km_ocr;Password=km_ocr_password
+      Storage__RootPath: /app/uploads
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: km_ocr
+      RabbitMq__Password: km_ocr_password
+      RabbitMq__OcrQueueName: ocr.jobs
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: ${MINIO_ROOT_USER:-km_ocr}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD:-km_ocr_password}
+      Minio__BucketName: ${MINIO_BUCKET:-documents}
+      Minio__UseSsl: false
+      Minio__PreviewUrlMinutes: 10
+      PaddleOcr__PythonExecutable: python3
+      PaddleOcr__ScriptPath: Ocr/paddle_ocr_service.py
+      PaddleOcr__Languages: ${PADDLE_OCR_LANGUAGES:-tha+eng}
+      PaddleOcr__TimeoutSeconds: ${PADDLE_OCR_TIMEOUT_SECONDS:-120}
+      Ai__Provider: ${AI_PROVIDER:-Ollama}
+      Ollama__BaseUrl: http://ollama:11434
+      Ollama__Model: ${OLLAMA_MODEL:-llama3.1}
+      Ollama__TimeoutSeconds: ${OLLAMA_TIMEOUT_SECONDS:-120}
+      OpenSearch__Url: http://opensearch:9200
+      OpenSearch__IndexName: ${OPENSEARCH_INDEX_NAME:-km-documents}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      ollama-init:
+        condition: service_completed_successfully
+      opensearch:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - uploads:/app/uploads
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: km-ocr-web
+    depends_on:
+      - api
+    ports:
+      - "3000:8080"
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:
+  ollama-data:
+  opensearch-data:
+  uploads:

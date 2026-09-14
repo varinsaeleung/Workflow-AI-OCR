@@ -1,0 +1,104 @@
+services:
+  postgres:
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    ports: []
+
+  rabbitmq:
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+    ports: []
+
+  minio:
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    ports: []
+
+  ollama:
+    restart: unless-stopped
+    ports: []
+
+  opensearch:
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_JAVA_OPTS: ${OPENSEARCH_JAVA_OPTS:--Xms1g -Xmx1g}
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?OPENSEARCH_INITIAL_ADMIN_PASSWORD is required}
+    ports: []
+
+  opensearch-dashboards:
+    restart: unless-stopped
+    ports: []
+
+  api:
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RabbitMq__Password: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      RabbitMq__OcrQueueName: ${RABBITMQ_OCR_QUEUE:-ocr.jobs}
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      Minio__BucketName: ${MINIO_BUCKET:?MINIO_BUCKET is required}
+      Minio__UseSsl: false
+      Minio__PreviewUrlMinutes: ${MINIO_PREVIEW_URL_MINUTES:-10}
+      Cors__AllowedOrigins__0: ${WEB_PUBLIC_ORIGIN:?WEB_PUBLIC_ORIGIN is required}
+      Jwt__Issuer: ${JWT_ISSUER:?JWT_ISSUER is required}
+      Jwt__Audience: ${JWT_AUDIENCE:?JWT_AUDIENCE is required}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?JWT_SIGNING_KEY is required}
+      Jwt__AccessTokenMinutes: ${JWT_ACCESS_TOKEN_MINUTES:-15}
+      Jwt__RefreshTokenDays: ${JWT_REFRESH_TOKEN_DAYS:-7}
+      PaddleOcr__PythonExecutable: python3
+      PaddleOcr__ScriptPath: Ocr/paddle_ocr_service.py
+      PaddleOcr__Languages: ${PADDLE_OCR_LANGUAGES:-tha+eng}
+      PaddleOcr__TimeoutSeconds: ${PADDLE_OCR_TIMEOUT_SECONDS:-120}
+      Ai__Provider: ${AI_PROVIDER:-Ollama}
+      Ollama__BaseUrl: http://ollama:11434
+      Ollama__Model: ${OLLAMA_MODEL:-llama3.1}
+      Ollama__TimeoutSeconds: ${OLLAMA_TIMEOUT_SECONDS:-120}
+      OpenSearch__Url: http://opensearch:9200
+      OpenSearch__IndexName: ${OPENSEARCH_INDEX_NAME:?OPENSEARCH_INDEX_NAME is required}
+
+  worker:
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__UserName: ${RABBITMQ_DEFAULT_USER:?RABBITMQ_DEFAULT_USER is required}
+      RabbitMq__Password: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS is required}
+      RabbitMq__OcrQueueName: ${RABBITMQ_OCR_QUEUE:-ocr.jobs}
+      Minio__Endpoint: minio:9000
+      Minio__AccessKey: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      Minio__SecretKey: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      Minio__BucketName: ${MINIO_BUCKET:?MINIO_BUCKET is required}
+      Minio__UseSsl: false
+      Minio__PreviewUrlMinutes: ${MINIO_PREVIEW_URL_MINUTES:-10}
+      PaddleOcr__PythonExecutable: python3
+      PaddleOcr__ScriptPath: Ocr/paddle_ocr_service.py
+      PaddleOcr__Languages: ${PADDLE_OCR_LANGUAGES:-tha+eng}
+      PaddleOcr__TimeoutSeconds: ${PADDLE_OCR_TIMEOUT_SECONDS:-120}
+      Ai__Provider: ${AI_PROVIDER:-Ollama}
+      Ollama__BaseUrl: http://ollama:11434
+      Ollama__Model: ${OLLAMA_MODEL:-llama3.1}
+      Ollama__TimeoutSeconds: ${OLLAMA_TIMEOUT_SECONDS:-120}
+      OpenSearch__Url: http://opensearch:9200
+      OpenSearch__IndexName: ${OPENSEARCH_INDEX_NAME:?OPENSEARCH_INDEX_NAME is required}
+
+  web:
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:8080"
