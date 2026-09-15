@@ -8,6 +8,7 @@ import {
   clearStoredSession,
   getEnterpriseDashboard,
   getDashboardSummary,
+  isDemoMode,
   login,
   logout,
   readStoredSession,
@@ -52,7 +53,7 @@ export default function App() {
   const [enterpriseDashboard, setEnterpriseDashboard] = useState<EnterpriseDashboardDto>(emptyEnterpriseDashboard);
   const [documents, setDocuments] = useState<DocumentDto[]>([]);
   const [query, setQuery] = useState("");
-  const [message, setMessage] = useState("Ready");
+  const [message, setMessage] = useState(isDemoMode() ? "Demo Mode" : "Ready");
   const [isLoading, setLoading] = useState(false);
   const [activeView, setActiveView] = useState<"operations" | "designer">("operations");
 
@@ -142,7 +143,7 @@ export default function App() {
   }
 
   if (!session) {
-    return <LoginPanel isLoading={isLoading} message={message} onLogin={handleLogin} />;
+    return <LoginPanel isDemoMode={isDemoMode()} isLoading={isLoading} message={message} onLogin={handleLogin} />;
   }
 
   return (

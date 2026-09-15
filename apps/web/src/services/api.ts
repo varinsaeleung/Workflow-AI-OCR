@@ -1,7 +1,22 @@
 import type { DashboardSummary, DocumentDto, EnterpriseDashboardDto } from "../types/api";
+import {
+  createDemoSession,
+  createDemoUploadedDocument,
+  getDemoDashboardSummary,
+  getDemoEnterpriseDashboard,
+  searchDemoDocuments
+} from "./demoData";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
 const SESSION_STORAGE_KEY = "km-ocr.auth.session";
+
+/**
+ * Reports whether the frontend is running with local mock data instead of backend APIs.
+ */
+export function isDemoMode(): boolean {
+  return IS_DEMO_MODE;
+}
 
 /**
  * Represents the authenticated user returned by the API.
@@ -121,6 +136,12 @@ async function request(path: string, init: RequestInit = {}, retryRefresh = true
  * Authenticates a user and stores the returned token pair.
  */
 export async function login(email: string, password: string): Promise<AuthSession> {
+  if (IS_DEMO_MODE) {
+    const session = createDemoSession(email || password);
+    storeSession(session);
+    return session;
+  }
+
   const response = await ensureOk(await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -135,6 +156,11 @@ export async function login(email: string, password: string): Promise<AuthSessio
  * Revokes the current refresh token and clears the local browser session.
  */
 export async function logout(): Promise<void> {
+  if (IS_DEMO_MODE) {
+    clearStoredSession();
+    return;
+  }
+
   const session = readStoredSession();
 
   try {
@@ -154,6 +180,10 @@ export async function logout(): Promise<void> {
  * Loads dashboard summary metrics.
  */
 export async function getDashboardSummary(): Promise<DashboardSummary> {
+  if (IS_DEMO_MODE) {
+    return getDemoDashboardSummary();
+  }
+
   const response = await request("/dashboard/summary");
   return response.json() as Promise<DashboardSummary>;
 }
@@ -162,6 +192,10 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
  * Loads enterprise dashboard metrics and chart data.
  */
 export async function getEnterpriseDashboard(): Promise<EnterpriseDashboardDto> {
+  if (IS_DEMO_MODE) {
+    return getDemoEnterpriseDashboard();
+  }
+
   const response = await request("/dashboard/enterprise");
   return response.json() as Promise<EnterpriseDashboardDto>;
 }
@@ -170,6 +204,10 @@ export async function getEnterpriseDashboard(): Promise<EnterpriseDashboardDto> 
  * Searches documents through the backend API.
  */
 export async function searchDocuments(query: string): Promise<DocumentDto[]> {
+  if (IS_DEMO_MODE) {
+    return searchDemoDocuments(query);
+  }
+
   const params = new URLSearchParams();
 
   if (query.trim()) {
@@ -190,6 +228,10 @@ export async function uploadDocument(input: {
   documentType: string;
   metadata: Record<string, string>;
 }): Promise<DocumentDto> {
+  if (IS_DEMO_MODE) {
+    return createDemoUploadedDocument(input);
+  }
+
   const form = new FormData();
   form.append("file", input.file);
   form.append("uploadedBy", input.uploadedBy);

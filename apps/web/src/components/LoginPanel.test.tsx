@@ -16,4 +16,14 @@ describe("LoginPanel", () => {
       expect(onLogin).toHaveBeenCalledWith({ email: "admin@km.local", password: "Pass@123" });
     });
   });
+
+  it("prefills demo credentials when demo mode is enabled", () => {
+    const onLogin = vi.fn().mockResolvedValue(undefined);
+
+    render(<LoginPanel isDemoMode={true} isLoading={false} message="Ready" onLogin={onLogin} />);
+
+    expect(screen.getByLabelText("Email")).toHaveValue("admin@km.local");
+    expect(screen.getByLabelText("Password")).toHaveValue("ChangeMe!2026");
+    expect(screen.getByText("Demo Mode")).toBeInTheDocument();
+  });
 });

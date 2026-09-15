@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
+    "dev:demo": "vite --host 0.0.0.0 --port 3000 --mode demo",
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "test": "vitest run --config vitest.config.ts"

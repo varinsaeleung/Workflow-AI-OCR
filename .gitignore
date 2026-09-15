@@ -15,6 +15,7 @@ apps/web/vite.config.d.ts
 .env
 .env.*
 !.env.example
+!apps/web/.env.demo
 uploads/
 postgres-data/
 rabbitmq-data/

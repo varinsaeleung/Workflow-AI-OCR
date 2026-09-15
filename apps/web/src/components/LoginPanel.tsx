@@ -2,6 +2,7 @@ import { LogIn } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 interface LoginPanelProps {
+  isDemoMode?: boolean;
   isLoading: boolean;
   message: string;
   onLogin: (credentials: { email: string; password: string }) => Promise<void>;
@@ -10,9 +11,9 @@ interface LoginPanelProps {
 /**
  * Renders the sign-in form used to establish an authenticated dashboard session.
  */
-export function LoginPanel({ isLoading, message, onLogin }: LoginPanelProps) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export function LoginPanel({ isDemoMode = false, isLoading, message, onLogin }: LoginPanelProps) {
+  const [email, setEmail] = useState(isDemoMode ? "admin@km.local" : "");
+  const [password, setPassword] = useState(isDemoMode ? "ChangeMe!2026" : "");
 
   /**
    * Submits the entered credentials to the authentication workflow.
@@ -28,6 +29,7 @@ export function LoginPanel({ isLoading, message, onLogin }: LoginPanelProps) {
         <p className="eyebrow">Enterprise OCR Operations</p>
         <h1 id="login-title">KM AI Workflow OCR Platform</h1>
         <p className="auth-subtitle">Sign in to manage documents, OCR, AI extraction, and workflow tasks.</p>
+        {isDemoMode ? <p className="demo-badge">Demo Mode</p> : null}
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>
