@@ -1,0 +1,72 @@
+name: Grok PR Summary
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+jobs:
+  summarize:
+    name: Summarize PR with Grok
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gh-models
+        run: gh extension install https://github.com/github/gh-models
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate summary with Grok
+        id: summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Get the diff
+          git diff origin/${{ github.base_ref }}...HEAD > pr.diff || true
+
+          # Prepare prompt
+          PROMPT="You are a helpful code reviewer. Summarize the following Pull Request in Thai (simple and clear).
+
+Title: $PR_TITLE
+
+Description:
+$PR_BODY
+
+Diff (first 8000 chars):
+$(head -c 8000 pr.diff)
+
+Please provide:
+1. สรุปสั้นๆ ว่า PR นี้ทำอะไร (2-3 ประโยค)
+2. ไฟล์หลักๆที่เปลี่ยน
+3. สิ่งที่ควรระวังเป็นพิเศษ (ถ้ามี)
+
+ตอบเป็นภาษาไทย กระชับ เข้าใจง่าย"
+
+          echo "$PROMPT" | gh models run xai/grok-3-mini > summary.md
+
+      - name: Post comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+            const body = `## 🤖 Grok Summary (GitHub Models)\n\n${summary}\n\n---\n*Generated automatically by Grok via GitHub Models*`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
